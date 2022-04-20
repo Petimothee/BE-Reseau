@@ -101,6 +101,15 @@ int mic_tcp_recv (int socket, char* mesg, int max_mesg_size);
 void process_received_PDU(mic_tcp_pdu pdu, mic_tcp_sock_addr addr);
 int mic_tcp_close(int socket);
 mic_tcp_pdu creer_PDU2(int dest_port, char *data, int size, unsigned int PE);
+mic_tcp_pdu creer_PDU_vide(int dest_port);
 int wait_for_ack(mic_tcp_pdu *pdu, mic_tcp_sock_addr * addr);
+int wait_for_ack2(mic_tcp_pdu *pdu, mic_tcp_sock_addr * addr);
+int wait_for_syn(mic_tcp_pdu *pdu, mic_tcp_sock_addr * addr);
+int wait_for_synack(mic_tcp_pdu *pdu, mic_tcp_sock_addr * addr);
+
+
+
+
+
 
 #endif
