@@ -104,29 +104,31 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
     //wait for ack
     mic_tcp_pdu ack = {0}; 
     while (active) {
+        printf("On rentre dans le wait_for_ack\n");
         if ((ack1 = IP_recv(&ack, &sock.addr, 100)) < 0) { //timeout
             if(IP_send(pdu, sock.addr) < 0) // à intégrer un nombre max de retransmission  
                 error("error ip-send",__LINE__);
             active = 1;
             //retransmission 
-            
-        } else { //réception ack
-            if ((ack.header.ack_num != PE) || (ack.header.ack == 1)){ //c'est pas le bon
-                printf("\nErreur pdu->header.seq_num != PE\n");
-                continue; 
+        }
+        else { //réception ack
+            if ((ack.header.ack_num != PE) || (ack.header.ack != 1)){ //c'est pas le bon
+                printf("\nErreur pdu->header.ack_num != PE\n");
+                if(IP_send(pdu, sock.addr) < 0) //on renvoie le msg pq c pas le bon
+                    error("error åip-send",__LINE__);
             } else{
+                printf("Accuse de reception bien recu\n");
                 active = -1;//ca marche bien (askip)
             }
         }
     }
 
     if (ack1<0){
-        printf("Erreur ack\n");
-        return -1;
+        error("erreur ack", __LINE__);
     }
     
     //PE = (PE+1)%2;
-
+    printf("seq num : %d", pdu.header.seq_num);
     return sent_size;
 }
 
@@ -186,8 +188,8 @@ void process_received_PDU(mic_tcp_pdu pdu, mic_tcp_sock_addr addr){
     ack.header.ack = 1; 
     ack.payload.size = 0; 
     ack.payload.data = NULL;
-    
     if (pdu.header.seq_num == PA) {
+        printf("seq num == PA\n");
         app_buffer_put(pdu.payload);
         PA = (PA +1) % 2; 
         ack.header.ack_num = PA; 
@@ -199,3 +201,4 @@ void process_received_PDU(mic_tcp_pdu pdu, mic_tcp_sock_addr addr){
 
 //gbenalay@insa-toulouse.fr
 //ghada gharbi
+//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
