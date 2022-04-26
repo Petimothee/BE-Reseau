@@ -108,7 +108,6 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
         if ((ack1 = IP_recv(&ack, &sock.addr, 100)) < 0) { //timeout
             if(IP_send(pdu, sock.addr) < 0) // à intégrer un nombre max de retransmission  
                 error("error ip-send",__LINE__);
-            active = 1;
             //retransmission 
         }
         else { //réception ack
@@ -116,9 +115,11 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
                 printf("\nErreur pdu->header.ack_num != PE\n");
                 if(IP_send(pdu, sock.addr) < 0) //on renvoie le msg pq c pas le bon
                     error("error åip-send",__LINE__);
-            } else{
+            }
+            else{
                 printf("Accuse de reception bien recu\n");
                 active = -1;//ca marche bien (askip)
+                break;
             }
         }
     }
@@ -128,7 +129,7 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
     }
     
     //PE = (PE+1)%2;
-    printf("seq num : %d", pdu.header.seq_num);
+    printf("seq num : %d\n", pdu.header.seq_num);
     return sent_size;
 }
 
