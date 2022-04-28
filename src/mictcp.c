@@ -1,9 +1,14 @@
 #include <mictcp.h>
 #include <api/mictcp_core.h>
+#define SIZE 10
 
 mic_tcp_sock sock;
 unsigned int PE = 0;
 unsigned int PA = 0; 
+int threshold = 20; //threshold de pertes en pourcentage
+int tabCirc[SIZE];
+static int i=0;
+int start=0;
 
 void error(char* error_message, int line){
     fprintf(stderr, "%s at line %d\n", error_message, line);
@@ -15,12 +20,12 @@ void error(char* error_message, int line){
  */
 int mic_tcp_socket(start_mode sm)
 {
-   int result = -1;
-   printf("[MIC-TCP] Appel de la fonction: ");  printf(__FUNCTION__); printf("\n");
-   result = initialize_components(sm); /* Appel obligatoire */
-   set_loss_rate(0);
+    int result = -1;
+    printf("[MIC-TCP] Appel de la fonction: ");  printf(__FUNCTION__); printf("\n");
+    result = initialize_components(sm); /* Appel obligatoire */
+    set_loss_rate(50);
     sock.fd = 0;
-   return sock.fd;
+    return sock.fd;
 }
 
 /*
@@ -63,6 +68,7 @@ int mic_tcp_connect(int socket, mic_tcp_sock_addr addr)
 /*
  * Permet de réclamer l’envoi d’une donnée applicative
  * Retourne la taille des données envoyées, et -1 en cas d'erreur
+ * Gere la gestion de la fiabilite partielle
  */
 int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
 {
@@ -99,34 +105,56 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
     }
     PE = (PE+1)%2;
 
-    int active=1;
-    int ack1 =-1;
+    //on va creer une liste circulaire avec un 1 ou un 0 dans chaque case. 1 si perte, 0 sinon. S'il y a plus de 1 que le threshold (variable globale) dans le tableau circulaire, on renvoie le dernier paquet
+    //gestion de fiabilite partielle
     //wait for ack
+    int active=1;
+    int ack1=-1;
     mic_tcp_pdu ack = {0}; 
+    //gestion de fiabilite partielle
+    int compteur1=0;
     while (active) {
         printf("On rentre dans le wait_for_ack\n");
         if ((ack1 = IP_recv(&ack, &sock.addr, 100)) < 0) { //timeout
-            if(IP_send(pdu, sock.addr) < 0) // à intégrer un nombre max de retransmission  
-                error("error ip-send",__LINE__);
-            //retransmission 
+            tabCirc[i] = 1;
+            i=(i+1)%SIZE; //on reinitialize l'indice a 0 si il depasse la taille du tableau (liste circulaire version sans pointeurs)
+            //on parcourt le tableau pour voir si on doit renvoyer ou non le paquet
+            for(int j=0; j<SIZE; j++){
+                compteur1 = compteur1 + tabCirc[j];
+            }
+            if(compteur1>(threshold/100)*size){
+                if(IP_send(pdu, sock.addr) < 0) // à intégrer un nombre max de retransmission  
+                    error("error ip-send",__LINE__);
+            }
         }
         else { //réception ack
             if ((ack.header.ack_num != PE) || (ack.header.ack != 1)){ //c'est pas le bon
                 printf("\nErreur pdu->header.ack_num != PE\n");
-                if(IP_send(pdu, sock.addr) < 0) //on renvoie le msg pq c pas le bon
-                    error("error åip-send",__LINE__);
+                tabCirc[i] = 1;
+                i=(i+1)%SIZE;
+                //on parcourt le tableau pour voir si on doit renvoyer ou non le paquet
+                for(int k=0; k<SIZE; k++){
+                    compteur1 = compteur1 + tabCirc[k];
+                }
+                if(compteur1>(threshold/100)*SIZE){
+                    if(IP_send(pdu, sock.addr) < 0) // à intégrer un nombre max de retransmission  
+                        error("error ip-send",__LINE__);
+                }
             }
-            else{
+            else{   //ca marche bien (askip)
                 printf("Accuse de reception bien recu\n");
-                active = -1;//ca marche bien (askip)
+                tabCirc[i] = 0;
+                i=(i+1)%SIZE;                //pas besoin de parcourir le tableau pq on a pas d'erreur sur i
+                active = -1;
                 break;
             }
         }
+        
+        
     }
 
-    if (ack1<0){
+    if (ack1<0)
         error("erreur ack", __LINE__);
-    }
     
     //PE = (PE+1)%2;
     printf("seq num : %d\n", pdu.header.seq_num);
