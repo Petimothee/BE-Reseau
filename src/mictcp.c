@@ -16,7 +16,7 @@ pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
 void error(char* error_message, int line){
     fprintf(stderr, "%s at line %d\n", error_message, line);
-    exit(EXIT_SUCCESS);
+    exit(EXIT_FAILURE);
 }
 /*
  * Permet de créer un socket entre l’application et MIC-TCP
@@ -182,8 +182,8 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
     printf("[MIC-TCP] Appel de la fonction: "); printf(__FUNCTION__); printf("\n");
     mic_tcp_pdu pdu = {0};
     int nombre_essais = 0;
-    int nombre_essais_max = 10;
-    //test si mic_sock = a socket
+    int nombre_essais_max = 50;
+
     if (mic_sock != sock.fd) {
         printf("Erreur socket");
         return -1;
@@ -212,7 +212,7 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
     mic_tcp_pdu ack = {0}; 
     //gestion de fiabilite partielle
     int compteur1=0;
-    while (active && (nombre_essais < nombre_essais_max)) {
+    while (active) {
         printf("On rentre dans le wait_for_ack\n");
         if ((ack1 = IP_recv(&ack, &addr_distant, 100)) < 0) { //timeout
             tabCirc[i] = 1;
@@ -220,23 +220,37 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
                 compteur1 = compteur1 + tabCirc[j];
             }
             if(compteur1>(threshold/100)*SIZE){     //s'il y a plus d'erreur que le threshold, on renvoi le paquet
-                if(IP_send(pdu, addr_distant) < 0)  
-                    error("error ip-send",__LINE__);
-                nombre_essais++;
+                if(nombre_essais<nombre_essais_max){
+                    PE=(PE+1)%2; //on reinitialise le PE pour que PE=PA lors du prochain envoi sinon il y aura un decalage infini
+                    if(IP_send(pdu, addr_distant) < 0)  
+                        error("error ip-send",__LINE__);
+                    nombre_essais++;
+                }
+                else{
+                    printf("Trop d'essais d'envois cote client\n");
+                    return -1;
+                }
             }
             i=(i+1)%SIZE; //on reinitialize l'indice a 0 s'il depasse la taille du tableau (liste circulaire version sans pointeurs)
         }
         else { //réception ack
             if ((ack.header.ack_num != PE) || (ack.header.ack != 1)){ //c'est pas le bon
-                printf("\nErreur pdu->header.ack_num != PE\n");
+                printf("Erreur pdu->header.ack_num != PE\n");
                 tabCirc[i] = 1;
                 for(int k=0; k<SIZE; k++){
                     compteur1 = compteur1 + tabCirc[k];
                 }
                 if(compteur1>(threshold/100)*SIZE){
-                    if(IP_send(pdu, addr_distant) < 0) 
-                        error("error ip-send",__LINE__);
-                    nombre_essais++;
+                    if(nombre_essais<nombre_essais_max){
+                        PE=(PE+1)%2;
+                        if(IP_send(pdu, addr_distant) < 0)  
+                            error("error ip-send",__LINE__);
+                        nombre_essais++;
+                    }
+                    else{
+                        printf("Trop d'essais d'envois cote client\n");
+                        return -1;
+                    }
                 }
                 i=(i+1)%SIZE;
             }
@@ -253,7 +267,7 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
     if (ack1<0)
         error("erreur ack", __LINE__);
     
-    printf("seq num : %d\n", pdu.header.seq_num);
+    printf("cote client avec seq num : %d\n", pdu.header.seq_num);
     return sent_size;
 }
 
@@ -322,25 +336,25 @@ void process_received_PDU(mic_tcp_pdu pdu, mic_tcp_sock_addr addr){
 
     //recuperation de data
     else{
-        printf("seq num : %d \n", pdu.header.seq_num); 
-        
         //insertion dans buffer si son seq num == PA
         if (pdu.header.seq_num == PA) {
             printf("seq num == PA\n");
             app_buffer_put(pdu.payload);
             //maj du PA
             PA = (PA +1) % 2; 
-            //construction ack
-            mic_tcp_pdu ack={0}; 
-            ack.header.source_port = sock.addr.port;
-            ack.header.dest_port = addr.port;
-            ack.header.ack_num = PA; 
-            ack.header.ack = 1; 
-            ack.header.ack_num = PA; 
-            //envoi de l'ack
-            if(IP_send(ack, addr) < 0)
-                error("problem ack", __LINE__);
         }
+        //construction ack
+        //si le seq_num != PA, le PA n'est pas incrementé et normalement le seq_num sera maj avant le prochain envoi dans le send()
+        mic_tcp_pdu ack={0}; 
+        ack.header.source_port = sock.addr.port;
+        ack.header.dest_port = addr.port;
+        ack.header.ack_num = PA; 
+        ack.header.ack = 1; 
+        //envoi de l'ack
+        if(IP_send(ack, addr) < 0)
+            error("problem ack", __LINE__);
+
+        printf("Cote serveur avec ack num : %d\n", ack.header.ack_num);
     }
 }
 
